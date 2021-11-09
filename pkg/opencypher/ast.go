@@ -672,7 +672,7 @@ func oC_PartialComparisonExpression(ctx *parser.OC_PartialComparisonExpressionCo
 	for i := 0; i < ctx.GetChildCount(); i++ {
 		if tok, ok := ctx.GetChild(i).(antlr.TerminalNode); ok {
 			t := tok.GetText()
-			if t == "=" || t == "<>" || t == "<" || t == ">" || t == "<=" || t == ">" {
+			if t == "=" || t == "<>" || t == "<" || t == ">" || t == "<=" || t == "=>" {
 				ret.Op = t
 			}
 		}
