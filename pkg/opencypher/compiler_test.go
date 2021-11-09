@@ -20,3 +20,10 @@ func TestUnion(t *testing.T) {
 
 	oC_Cypher(c.(*parser.OC_CypherContext))
 }
+
+func TestExpr(t *testing.T) {
+	c := getParser(`x  +  y+z`).OC_Expression()
+
+	out := oC_Expression(c.(*parser.OC_ExpressionContext))
+	t.Logf("%+v", out)
+}
