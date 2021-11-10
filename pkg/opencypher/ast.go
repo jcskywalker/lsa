@@ -38,6 +38,11 @@ type Expression interface {
 	Evaluatable
 }
 
+type Unwind struct {
+	Expr Expression
+	As   Variable
+}
+
 type OrExpression struct {
 	Parts []Evaluatable
 }
@@ -63,6 +68,8 @@ type AddOrSubtractExpression struct {
 
 type MultiplyDivideModuloExpression struct {
 	Parts []MultiplyDivideModuloExpressionPart
+
+	constValue *Value
 }
 
 type MultiplyDivideModuloExpressionPart struct {
@@ -73,11 +80,15 @@ type MultiplyDivideModuloExpressionPart struct {
 
 type PowerOfExpression struct {
 	Parts []UnaryAddOrSubtractExpression
+
+	constValue *Value
 }
 
 type UnaryAddOrSubtractExpression struct {
 	Neg  bool
 	Expr StringListNullOperatorExpression
+
+	constValue *Value
 }
 
 type StringListNullOperatorExpression struct {
@@ -225,28 +236,6 @@ type Properties struct {
 	Param *Parameter
 }
 
-type DoubleLiteral struct {
-	Value float64
-}
-
-type IntLiteral int
-
-type RangeLiteral struct {
-	From, To *IntLiteral
-}
-
-type BooleanLiteral struct {
-	Value bool
-}
-
-type ListLiteral struct {
-	Values []Expression
-}
-
-type MapLiteral struct {
-	KeyValues []MapKeyValue
-}
-
 type MapKeyValue struct {
 	Key   SchemaName
 	Value Expression
@@ -304,9 +293,21 @@ type CaseAlternative struct {
 }
 
 type NullLiteral struct{}
+type StringLiteral string
+type DoubleLiteral float64
+type IntLiteral int
+type BooleanLiteral bool
 
-type StringLiteral struct {
-	Value string
+type RangeLiteral struct {
+	From, To *IntLiteral
+}
+
+type ListLiteral struct {
+	Values []Expression
+}
+
+type MapLiteral struct {
+	KeyValues []MapKeyValue
 }
 
 func oC_Cypher(ctx *parser.OC_CypherContext) Evaluatable {
@@ -890,9 +891,9 @@ func oC_IntegerLiteral(ctx *parser.OC_IntegerLiteralContext) IntLiteral {
 
 func oC_BooleanLiteral(ctx *parser.OC_BooleanLiteralContext) BooleanLiteral {
 	if ctx.TRUE() != nil {
-		return BooleanLiteral{true}
+		return BooleanLiteral(true)
 	}
-	return BooleanLiteral{false}
+	return BooleanLiteral(false)
 }
 
 func oC_ListLiteral(ctx *parser.OC_ListLiteralContext) ListLiteral {
@@ -1096,7 +1097,7 @@ func oC_Literal(ctx *parser.OC_LiteralContext) Evaluatable {
 		return oC_NumberLiteral(n.(*parser.OC_NumberLiteralContext))
 	}
 	if s := ctx.StringLiteral(); s != nil {
-		return StringLiteral{Value: s.GetText()}
+		return StringLiteral(s.GetText())
 	}
 	if b := ctx.OC_BooleanLiteral(); b != nil {
 		return oC_BooleanLiteral(b.(*parser.OC_BooleanLiteralContext))
@@ -1119,11 +1120,14 @@ func oC_DoubleLiteral(ctx *parser.OC_DoubleLiteralContext) DoubleLiteral {
 	if err != nil {
 		panic(err)
 	}
-	return DoubleLiteral{v}
+	return DoubleLiteral(v)
 }
 
-func oC_Unwind(ctx *parser.OC_UnwindContext) Evaluatable {
-	panic("Unsupported: unwind")
+func oC_Unwind(ctx *parser.OC_UnwindContext) Unwind {
+	return Unwind{
+		Expr: oC_Expression(ctx.OC_Expression().(*parser.OC_ExpressionContext)),
+		As:   oC_Variable(ctx.OC_Variable().(*parser.OC_VariableContext)),
+	}
 }
 
 func oC_InQueryCall(ctx *parser.OC_InQueryCallContext) Evaluatable {
