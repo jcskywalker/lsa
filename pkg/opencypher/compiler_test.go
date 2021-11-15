@@ -15,15 +15,14 @@ func getParser(input string) *parser.CypherParser {
 	return p
 }
 
-func TestUnion(t *testing.T) {
-	c := getParser(`match (n) return n union all match (n) return n`).OC_Cypher()
-
-	oC_Cypher(c.(*parser.OC_CypherContext))
-}
-
 func TestExpr(t *testing.T) {
-	c := getParser(`x  +  y+z`).OC_Expression()
-
+	c := getParser(`5  +  7+1`).OC_Expression()
 	out := oC_Expression(c.(*parser.OC_ExpressionContext))
-	t.Logf("%+v", out)
+	result, err := out.Evaluate(NewEvalContext())
+	if err != nil {
+		t.Error(err)
+	}
+	if result.Value != 13 {
+		t.Errorf("Wrong result: %+v %T", result, result.Value)
+	}
 }
