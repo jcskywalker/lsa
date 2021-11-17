@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	c_const  = 0x001
-	c_rvalue = 0x002
+	c_const  uint = 0x001
+	c_lvalue uint = 0x002
 )
 
 var (
@@ -31,8 +31,42 @@ var (
 )
 
 type Value struct {
-	Value interface{}
+	v interface{}
+
+	variable string
+	box      *Value
+
 	Class uint
+}
+
+func (v *Value) Get(ctx *EvalContext) (interface{}, error) {
+	if !v.IsLvalue() {
+		return v.v, nil
+	}
+	if v.box == nil {
+		var err error
+		v.box, err = ctx.GetVar(v.variable)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return v.box.v, nil
+}
+
+func (v *Value) Set(value interface{}) {
+	if v.box != nil {
+		v.box.Set(value)
+		return
+	}
+	v.v = value
+}
+
+func (v *Value) Lvalue(lvalue bool) {
+	if lvalue {
+		v.Class |= c_lvalue
+	} else {
+		v.Class &= ^c_lvalue
+	}
 }
 
 func (v Value) Evaluate(ctx *EvalContext) (Value, error) { return v, nil }
@@ -41,37 +75,41 @@ func (v Value) IsConst() bool {
 	return (v.Class & c_const) != 0
 }
 
+func (v Value) IsLvalue() bool {
+	return (v.Class & c_lvalue) != 0
+}
+
 func (literal IntLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		Value: int(literal),
-		Class: c_const | c_rvalue,
+		v:     int(literal),
+		Class: c_const,
 	}, nil
 }
 
 func (literal BooleanLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		Value: bool(literal),
-		Class: c_const | c_rvalue,
+		v:     bool(literal),
+		Class: c_const,
 	}, nil
 }
 
 func (literal DoubleLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		Value: float64(literal),
-		Class: c_const | c_rvalue,
+		v:     float64(literal),
+		Class: c_const,
 	}, nil
 }
 
 func (literal StringLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		Value: string(literal),
-		Class: c_const | c_rvalue,
+		v:     string(literal),
+		Class: c_const,
 	}, nil
 }
 
 func (literal NullLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		Class: c_const | c_rvalue,
+		Class: c_const,
 	}, nil
 }
 
@@ -85,13 +123,18 @@ func (expr *UnaryAddOrSubtractExpression) Evaluate(ctx *EvalContext) (Value, err
 		return value, err
 	}
 	if expr.Neg {
-		if intValue, ok := value.Value.(int); ok {
-			value.Value = -intValue
-		} else if floatValue, ok := value.Value.(float64); ok {
-			value.Value = -floatValue
+		val, err := value.Get(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		if intValue, ok := val.(int); ok {
+			value.Set(-intValue)
+		} else if floatValue, ok := val.(float64); ok {
+			value.Set(-floatValue)
 		} else {
 			return value, ErrInvalidUnaryOperation
 		}
+		value.Lvalue(false)
 	}
 	if value.IsConst() {
 		expr.constValue = &value
@@ -503,126 +546,128 @@ func (expr *AddOrSubtractExpression) Evaluate(ctx *EvalContext) (Value, error) {
 	return ret, nil
 }
 
+func compareValues(v1, v2 interface{}) (int, error) {
+	if v1 == nil || v2 == nil {
+		return 0, ErrOperationWithNull
+	}
+	switch value1 := v1.(type) {
+	case bool:
+		switch value2 := v2.(type) {
+		case bool:
+			if value1 == value2 {
+				return 0, nil
+			}
+			if value1 {
+				return 1, nil
+			}
+			return -1, nil
+		}
+	case int:
+		switch value2 := v2.(type) {
+		case int:
+			return value1 - value2, nil
+		case float64:
+			if float64(value1) == value2 {
+				return 0, nil
+			}
+			if float64(value1) < value2 {
+				return -1, nil
+			}
+			return 1, nil
+		}
+	case float64:
+		switch value2 := v2.(type) {
+		case int:
+			if value1 == float64(value2) {
+				return 0, nil
+			}
+			if value1 < float64(value2) {
+				return -1, nil
+			}
+			return 1, nil
+		case float64:
+			if value1 == value2 {
+				return 0, nil
+			}
+			if value1 < value2 {
+				return -1, nil
+			}
+			return 1, nil
+		}
+	case string:
+		if str, ok := v2.(string); ok {
+			if value1 == str {
+				return 0, nil
+			}
+			if value1 < str {
+				return -1, nil
+			}
+			return 1, nil
+		}
+	case neo4j.Duration:
+		if dur, ok := v2.(neo4j.Duration); ok {
+			if value1.Days() == dur.Days() && value1.Months() == dur.Months() && value1.Seconds() == dur.Seconds() && value1.Nanos() == dur.Nanos() {
+				return 0, nil
+			}
+			if value1.Days() < dur.Days() {
+				return -1, nil
+			}
+			if value1.Months() < dur.Months() {
+				return -1, nil
+			}
+			if value1.Seconds() < dur.Seconds() {
+				return -1, nil
+			}
+			if value1.Nanos() < dur.Nanos() {
+				return -1, nil
+			}
+			return 1, nil
+		}
+	case neo4j.Date:
+		if date, ok := v2.(neo4j.Date); ok {
+			t1 := value1.Time()
+			t2 := date.Time()
+			if t1.Equal(t2) {
+				return 0, nil
+			}
+			if t1.Before(t2) {
+				return -1, nil
+			}
+			return 0, nil
+		}
+	case neo4j.LocalTime:
+		if date, ok := v2.(neo4j.LocalTime); ok {
+			t1 := value1.Time()
+			t2 := date.Time()
+			if t1.Equal(t2) {
+				return 0, nil
+			}
+			if t1.Before(t2) {
+				return -1, nil
+			}
+			return 0, nil
+		}
+	case neo4j.LocalDateTime:
+		if date, ok := v2.(neo4j.LocalDateTime); ok {
+			t1 := value1.Time()
+			t2 := date.Time()
+			if t1.Equal(t2) {
+				return 0, nil
+			}
+			if t1.Before(t2) {
+				return -1, nil
+			}
+			return 0, nil
+		}
+	}
+	return 0, ErrInvalidComparison
+
+}
+
 func (expr ComparisonExpression) Evaluate(ctx *EvalContext) (Value, error) {
 	val, err := expr.First.Evaluate(ctx)
 	if err != nil {
 		return Value{}, err
-	}
-	compare := func(v1, v2 interface{}) (int, error) {
-		if v1 == nil || v2 == nil {
-			return 0, ErrOperationWithNull
-		}
-		switch value1 := v1.(type) {
-		case bool:
-			switch value2 := v2.(type) {
-			case bool:
-				if value1 == value2 {
-					return 0, nil
-				}
-				if value1 {
-					return 1, nil
-				}
-				return -1, nil
-			}
-		case int:
-			switch value2 := v2.(type) {
-			case int:
-				return value1 - value2, nil
-			case float64:
-				if float64(value1) == value2 {
-					return 0, nil
-				}
-				if float64(value1) < value2 {
-					return -1, nil
-				}
-				return 1, nil
-			}
-		case float64:
-			switch value2 := v2.(type) {
-			case int:
-				if value1 == float64(value2) {
-					return 0, nil
-				}
-				if value1 < float64(value2) {
-					return -1, nil
-				}
-				return 1, nil
-			case float64:
-				if value1 == value2 {
-					return 0, nil
-				}
-				if value1 < value2 {
-					return -1, nil
-				}
-				return 1, nil
-			}
-		case string:
-			if str, ok := v2.(string); ok {
-				if value1 == str {
-					return 0, nil
-				}
-				if value1 < str {
-					return -1, nil
-				}
-				return 1, nil
-			}
-		case neo4j.Duration:
-			if dur, ok := v2.(neo4j.Duration); ok {
-				if value1.Days() == dur.Days() && value1.Months() == dur.Months() && value1.Seconds() == dur.Seconds() && value1.Nanos() == dur.Nanos() {
-					return 0, nil
-				}
-				if value1.Days() < dur.Days() {
-					return -1, nil
-				}
-				if value1.Months() < dur.Months() {
-					return -1, nil
-				}
-				if value1.Seconds() < dur.Seconds() {
-					return -1, nil
-				}
-				if value1.Nanos() < dur.Nanos() {
-					return -1, nil
-				}
-				return 1, nil
-			}
-		case neo4j.Date:
-			if date, ok := v2.(neo4j.Date); ok {
-				t1 := value1.Time()
-				t2 := date.Time()
-				if t1.Equal(t2) {
-					return 0, nil
-				}
-				if t1.Before(t2) {
-					return -1, nil
-				}
-				return 0, nil
-			}
-		case neo4j.LocalTime:
-			if date, ok := v2.(neo4j.LocalTime); ok {
-				t1 := value1.Time()
-				t2 := date.Time()
-				if t1.Equal(t2) {
-					return 0, nil
-				}
-				if t1.Before(t2) {
-					return -1, nil
-				}
-				return 0, nil
-			}
-		case neo4j.LocalDateTime:
-			if date, ok := v2.(neo4j.LocalDateTime); ok {
-				t1 := value1.Time()
-				t2 := date.Time()
-				if t1.Equal(t2) {
-					return 0, nil
-				}
-				if t1.Before(t2) {
-					return -1, nil
-				}
-				return 0, nil
-			}
-		}
-		return 0, ErrInvalidComparison
 	}
 
 	for i := range expr.Second {
@@ -630,7 +675,7 @@ func (expr ComparisonExpression) Evaluate(ctx *EvalContext) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		result, err := compare(val.Value, second.Value)
+		result, err := compareValues(val.Value, second.Value)
 		if err != nil {
 			return Value{}, err
 		}
@@ -858,12 +903,49 @@ func (f *FunctionInvocation) Evaluate(ctx *EvalContext) (Value, error) {
 	return f.function(ctx, args)
 }
 
+func (cs Case) Evaluate(ctx *EvalContext) (Value, error) {
+	var testValue Value
+	if cs.Test != nil {
+		v, err := cs.Test.Evaluate(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		testValue = v
+	}
+	for _, alternative := range cs.Alternatives {
+		when, err := alternative.When.Evaluate(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		if cs.Test != nil {
+			result, err := compareValues(testValue, when)
+			if err != nil {
+				return Value{}, err
+			}
+			if result == 0 {
+				return alternative.Then.Evaluate(ctx)
+			}
+		} else {
+			boolValue, ok := when.Value.(bool)
+			if !ok {
+				return Value{}, ErrNotABooleanExpression
+			}
+			if boolValue {
+				return alternative.Then.Evaluate(ctx)
+			}
+		}
+	}
+	if cs.Default != nil {
+		return cs.Default.Evaluate(ctx)
+	}
+	return Value{}, nil
+}
+
 func (query RegularQuery) Evaluate(ctx *EvalContext) (Value, error)       { panic("Unimplemented") }
 func (query SinglePartQuery) Evaluate(ctx *EvalContext) (Value, error)    { panic("Unimplemented") }
 func (match Match) Evaluate(ctx *EvalContext) (Value, error)              { panic("Unimplemented") }
 func (unwind Unwind) Evaluate(ctx *EvalContext) (Value, error)            { panic("Unimplemented") }
 func (pattern Pattern) Evaluate(ctx *EvalContext) (Value, error)          { panic("Unimplemented") }
-func (cs Case) Evaluate(ctx *EvalContext) (Value, error)                  { panic("Unimplemented") }
 func (ls ListComprehension) Evaluate(ctx *EvalContext) (Value, error)     { panic("Unimplemented") }
 func (p PatternComprehension) Evaluate(ctx *EvalContext) (Value, error)   { panic("Unimplemented") }
 func (flt FilterAtom) Evaluate(ctx *EvalContext) (Value, error)           { panic("Unimplemented") }
