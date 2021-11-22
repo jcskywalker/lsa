@@ -3,6 +3,7 @@ package opencypher
 import (
 	"errors"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/neo4j/neo4j-go-driver/neo4j"
@@ -24,92 +25,46 @@ var (
 	ErrInvalidDateOperation           = errors.New("Invalid date operation")
 	ErrInvalidAdditiveOperation       = errors.New("Invalid additive operation")
 	ErrInvalidComparison              = errors.New("Invalid comparison")
+	ErrInvalidListIndex               = errors.New("Invalid list index")
+	ErrNotAList                       = errors.New("Not a list")
 	ErrNotABooleanExpression          = errors.New("Not a boolean expression")
 	ErrMapKeyNotString                = errors.New("Map key is not a string")
 	ErrInvalidMapKey                  = errors.New("Invalid map key")
+	ErrNotAGraphObject                = errors.New("Not a graph object")
 	ErrIntValueRequired               = errors.New("Int value required")
 )
 
-type Value struct {
-	v interface{}
-
-	variable string
-	box      *Value
-
-	Class uint
-}
-
-func (v *Value) Get(ctx *EvalContext) (interface{}, error) {
-	if !v.IsLvalue() {
-		return v.v, nil
-	}
-	if v.box == nil {
-		var err error
-		v.box, err = ctx.GetVar(v.variable)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return v.box.v, nil
-}
-
-func (v *Value) Set(value interface{}) {
-	if v.box != nil {
-		v.box.Set(value)
-		return
-	}
-	v.v = value
-}
-
-func (v *Value) Lvalue(lvalue bool) {
-	if lvalue {
-		v.Class |= c_lvalue
-	} else {
-		v.Class &= ^c_lvalue
-	}
-}
-
-func (v Value) Evaluate(ctx *EvalContext) (Value, error) { return v, nil }
-
-func (v Value) IsConst() bool {
-	return (v.Class & c_const) != 0
-}
-
-func (v Value) IsLvalue() bool {
-	return (v.Class & c_lvalue) != 0
-}
-
 func (literal IntLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		v:     int(literal),
-		Class: c_const,
+		Value:    int(literal),
+		Constant: true,
 	}, nil
 }
 
 func (literal BooleanLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		v:     bool(literal),
-		Class: c_const,
+		Value:    bool(literal),
+		Constant: true,
 	}, nil
 }
 
 func (literal DoubleLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		v:     float64(literal),
-		Class: c_const,
+		Value:    float64(literal),
+		Constant: true,
 	}, nil
 }
 
 func (literal StringLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		v:     string(literal),
-		Class: c_const,
+		Value:    string(literal),
+		Constant: true,
 	}, nil
 }
 
 func (literal NullLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{
-		Class: c_const,
+		Constant: true,
 	}, nil
 }
 
@@ -122,21 +77,19 @@ func (expr *UnaryAddOrSubtractExpression) Evaluate(ctx *EvalContext) (Value, err
 	if err != nil {
 		return value, err
 	}
+	if value.Value == nil {
+		return value, nil
+	}
 	if expr.Neg {
-		val, err := value.Get(ctx)
-		if err != nil {
-			return Value{}, err
-		}
-		if intValue, ok := val.(int); ok {
-			value.Set(-intValue)
-		} else if floatValue, ok := val.(float64); ok {
-			value.Set(-floatValue)
+		if intValue, ok := value.Value.(int); ok {
+			value.Value = -intValue
+		} else if floatValue, ok := value.Value.(float64); ok {
+			value.Value = -floatValue
 		} else {
 			return value, ErrInvalidUnaryOperation
 		}
-		value.Lvalue(false)
 	}
-	if value.IsConst() {
+	if value.Constant {
 		expr.constValue = &value
 	}
 	return value, nil
@@ -151,6 +104,9 @@ func (expr *PowerOfExpression) Evaluate(ctx *EvalContext) (Value, error) {
 		val, err := expr.Parts[i].Evaluate(ctx)
 		if err != nil {
 			return val, err
+		}
+		if val.Value == nil {
+			return Value{}, nil
 		}
 		if i == 0 {
 			ret = val
@@ -170,10 +126,10 @@ func (expr *PowerOfExpression) Evaluate(ctx *EvalContext) (Value, error) {
 			} else {
 				return Value{}, ErrInvalidPowerOperation
 			}
-			ret.Class &= val.Class
+			ret.Constant = ret.Constant && val.Constant
 		}
 	}
-	if ret.IsConst() {
+	if ret.Constant {
 		expr.constValue = &ret
 	}
 	return ret, nil
@@ -306,9 +262,9 @@ func (expr *MultiplyDivideModuloExpression) Evaluate(ctx *EvalContext) (Value, e
 			ret = val
 		} else {
 			if ret.Value == nil {
-				return Value{}, ErrOperationWithNull
+				return Value{}, nil
 			}
-			ret.Class &= val.Class
+			ret.Constant = ret.Constant && val.Constant
 			switch result := ret.Value.(type) {
 			case int:
 				switch operand := val.Value.(type) {
@@ -349,7 +305,7 @@ func (expr *MultiplyDivideModuloExpression) Evaluate(ctx *EvalContext) (Value, e
 	if err != nil {
 		return Value{}, err
 	}
-	if ret.IsConst() {
+	if ret.Constant {
 		expr.constValue = &ret
 	}
 	return ret, nil
@@ -442,6 +398,24 @@ func adddurdur(a neo4j.Duration, b neo4j.Duration, sub bool) (neo4j.Duration, er
 	return neo4j.DurationOf(a.Months()+b.Months(), a.Days()+b.Days(), a.Seconds()+b.Seconds(), a.Nanos()+b.Nanos()), nil
 }
 
+func addlistlist(a, b []Value) Value {
+	arr := make([]Value, 0, len(a)+len(b))
+	ret := Value{Constant: true}
+	for _, x := range a {
+		if !x.Constant {
+			ret.Constant = false
+		}
+		arr = append(arr, x)
+	}
+	for _, x := range b {
+		if !x.Constant {
+			ret.Constant = false
+		}
+		arr = append(arr, x)
+	}
+	return ret
+}
+
 func (expr *AddOrSubtractExpression) Evaluate(ctx *EvalContext) (Value, error) {
 	if expr.constValue != nil {
 		return *expr.constValue, nil
@@ -456,7 +430,7 @@ func (expr *AddOrSubtractExpression) Evaluate(ctx *EvalContext) (Value, error) {
 			ret = operand
 			return nil
 		}
-		ret.Class &= operand.Class
+		ret.Constant = ret.Constant && operand.Constant
 		var err error
 		switch retValue := ret.Value.(type) {
 		case int:
@@ -518,6 +492,16 @@ func (expr *AddOrSubtractExpression) Evaluate(ctx *EvalContext) (Value, error) {
 			default:
 				err = ErrInvalidAdditiveOperation
 			}
+		case []Value:
+			if sub {
+				return ErrInvalidAdditiveOperation
+			}
+			switch operandValue := operand.Value.(type) {
+			case []Value:
+				ret = addlistlist(retValue, operandValue)
+			default:
+				err = ErrInvalidAdditiveOperation
+			}
 		}
 		return err
 	}
@@ -540,7 +524,7 @@ func (expr *AddOrSubtractExpression) Evaluate(ctx *EvalContext) (Value, error) {
 			return Value{}, err
 		}
 	}
-	if ret.IsConst() {
+	if ret.Constant {
 		expr.constValue = &ret
 	}
 	return ret, nil
@@ -670,10 +654,16 @@ func (expr ComparisonExpression) Evaluate(ctx *EvalContext) (Value, error) {
 		return Value{}, err
 	}
 
+	if val.Value == nil {
+		return Value{}, nil
+	}
 	for i := range expr.Second {
 		second, err := expr.Second[i].Expr.Evaluate(ctx)
 		if err != nil {
 			return Value{}, err
+		}
+		if second.Value == nil {
+			return Value{}, nil
 		}
 		result, err := compareValues(val.Value, second.Value)
 		if err != nil {
@@ -693,7 +683,7 @@ func (expr ComparisonExpression) Evaluate(ctx *EvalContext) (Value, error) {
 		case ">=":
 			val.Value = result >= 0
 		}
-		val.Class &= second.Class
+		val.Constant = val.Constant && second.Constant
 	}
 	return val, nil
 }
@@ -702,6 +692,9 @@ func (expr NotExpression) Evaluate(ctx *EvalContext) (Value, error) {
 	val, err := expr.Part.Evaluate(ctx)
 	if err != nil {
 		return Value{}, err
+	}
+	if val.Value == nil {
+		return Value{}, nil
 	}
 	value, ok := val.Value.(bool)
 	if !ok {
@@ -718,6 +711,9 @@ func (expr AndExpression) Evaluate(ctx *EvalContext) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+		if val.Value == nil {
+			return Value{}, nil
+		}
 		if i == 0 {
 			ret = val
 		} else {
@@ -729,7 +725,7 @@ func (expr AndExpression) Evaluate(ctx *EvalContext) (Value, error) {
 			if !ok {
 				return Value{}, ErrNotABooleanExpression
 			}
-			ret.Class &= val.Class
+			ret.Constant = ret.Constant && val.Constant
 			ret.Value = bval && vval
 			if !bval || !vval {
 				break
@@ -746,6 +742,9 @@ func (expr XorExpression) Evaluate(ctx *EvalContext) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+		if val.Value == nil {
+			return Value{}, nil
+		}
 		if i == 0 {
 			ret = val
 		} else {
@@ -757,7 +756,7 @@ func (expr XorExpression) Evaluate(ctx *EvalContext) (Value, error) {
 			if !ok {
 				return Value{}, ErrNotABooleanExpression
 			}
-			ret.Class &= val.Class
+			ret.Constant = ret.Constant && val.Constant
 			ret.Value = bval != vval
 		}
 	}
@@ -771,6 +770,9 @@ func (expr OrExpression) Evaluate(ctx *EvalContext) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
+		if val.Value == nil {
+			return Value{}, nil
+		}
 		if i == 0 {
 			ret = val
 		} else {
@@ -782,7 +784,7 @@ func (expr OrExpression) Evaluate(ctx *EvalContext) (Value, error) {
 			if !ok {
 				return Value{}, ErrNotABooleanExpression
 			}
-			ret.Class &= val.Class
+			ret.Constant = ret.Constant && val.Constant
 			ret.Value = bval || vval
 			if bval || vval {
 				break
@@ -804,14 +806,14 @@ func (lst *ListLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 			return Value{}, err
 		}
 		if i == 0 {
-			val.Class = v.Class
+			val.Constant = v.Constant
 		} else {
-			val.Class &= v.Class
+			val.Constant = val.Constant && v.Constant
 		}
 		ret = append(ret, v)
 	}
 	val.Value = ret
-	if val.IsConst() {
+	if val.Constant {
 		lst.constValue = &val
 	}
 	return val, nil
@@ -834,13 +836,13 @@ func (mp *MapLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 		}
 		ret[keyStr] = value
 		if i == 0 {
-			val.Class = value.Class
+			val.Constant = value.Constant
 		} else {
-			val.Class &= value.Class
+			val.Constant = val.Constant && value.Constant
 		}
 	}
 	val.Value = ret
-	if val.IsConst() {
+	if val.Constant {
 		mp.constValue = &val
 	}
 	return val, nil
@@ -851,10 +853,169 @@ func (expr StringListNullOperatorExpression) Evaluate(ctx *EvalContext) (Value, 
 	if err != nil {
 		return Value{}, err
 	}
-	for range expr.Parts {
-		panic("unimplemented")
+	for _, part := range expr.Parts {
+		val, err = part.evaluate(ctx, val)
+		if err != nil {
+			return Value{}, err
+		}
 	}
 	return val, nil
+}
+
+func (expr StringListNullOperatorExpressionPart) evaluate(ctx *EvalContext, inputValue Value) (Value, error) {
+	switch {
+	case expr.IsNull != nil:
+		if *expr.IsNull {
+			return Value{Value: inputValue.Value == nil}, nil
+		}
+		return Value{Value: inputValue.Value != nil}, nil
+
+	case expr.ListIndex != nil:
+		listValue, ok := inputValue.Value.([]Value)
+		if !ok {
+			if inputValue.Value != nil {
+				return Value{}, ErrNotAList
+			}
+		}
+		indexValue, err := expr.ListIndex.Evaluate(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		if indexValue.Value == nil {
+			return Value{}, nil
+		}
+		intValue, ok := indexValue.Value.(int)
+		if !ok {
+			return Value{}, ErrInvalidListIndex
+		}
+		if listValue == nil {
+			return Value{}, nil
+		}
+		if intValue >= 0 {
+			if intValue >= len(listValue) {
+				return Value{}, nil
+			}
+			return listValue[intValue], nil
+		}
+		index := len(listValue) + intValue
+		if index < 0 {
+			return Value{}, nil
+		}
+		return listValue[index], nil
+
+	case expr.ListIn != nil:
+		listValue, err := expr.ListIn.Evaluate(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		list, ok := listValue.Value.([]Value)
+		if ok {
+			if listValue.Value != nil {
+				return Value{}, ErrNotAList
+			}
+		}
+		if inputValue.Value == nil {
+			return Value{}, nil
+		}
+		hasNull := false
+		for _, elem := range list {
+			if elem.Value == nil {
+				hasNull = true
+			} else {
+				v, err := compareValues(inputValue.Value, elem.Value)
+				if err != nil {
+					return Value{}, err
+				}
+				if v == 0 {
+					return Value{Value: true}, nil
+				}
+			}
+		}
+		if hasNull {
+			return Value{}, nil
+		}
+		return Value{Value: false}, nil
+
+	case expr.ListRange != nil:
+		constant := inputValue.Constant
+		listValue, ok := inputValue.Value.([]Value)
+		if !ok {
+			if inputValue.Value != nil {
+				return Value{}, ErrNotAList
+			}
+		}
+		from, err := expr.ListRange.First.Evaluate(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		if from.Value == nil {
+			return Value{}, nil
+		}
+		if !from.Constant {
+			constant = false
+		}
+		fromi, ok := from.Value.(int)
+		if !ok {
+			return Value{}, ErrInvalidListIndex
+		}
+		to, err := expr.ListRange.Second.Evaluate(ctx)
+		if err != nil {
+			return Value{}, err
+		}
+		if to.Value == nil {
+			return Value{}, nil
+		}
+		if !to.Constant {
+			constant = false
+		}
+		toi, ok := to.Value.(int)
+		if !ok {
+			return Value{}, ErrInvalidListIndex
+		}
+		if fromi < 0 || toi < 0 {
+			return Value{}, ErrInvalidListIndex
+		}
+		if fromi >= len(listValue) {
+			fromi = len(listValue) - 1
+		}
+		if toi >= len(listValue) {
+			toi = len(listValue) - 1
+		}
+		if fromi > toi {
+			fromi = toi
+		}
+		arr := make([]Value, 0, toi-fromi)
+		for i := fromi; i < toi; i++ {
+			if !listValue[i].Constant {
+				constant = false
+			}
+			arr = append(arr, listValue[i])
+		}
+		return Value{Value: arr, Constant: constant}, nil
+	}
+	return expr.String.evaluate(ctx, inputValue)
+}
+
+func (expr StringOperatorExpression) evaluate(ctx *EvalContext, inputValue Value) (Value, error) {
+	inputStrValue, ok := inputValue.Value.(string)
+	if !ok {
+		return Value{}, ErrInvalidStringOperation
+	}
+	exprValue, err := expr.Expr.Evaluate(ctx)
+	if err != nil {
+		return Value{}, err
+	}
+	strValue, ok := exprValue.Value.(string)
+	if !ok {
+		return Value{}, ErrInvalidStringOperation
+	}
+	if expr.Operator == "STARTS" {
+		return Value{Value: strings.HasPrefix(inputStrValue, strValue)}, nil
+	}
+	if expr.Operator == "ENDS" {
+		return Value{Value: strings.HasSuffix(inputStrValue, strValue)}, nil
+	}
+	return Value{Value: strings.Contains(inputStrValue, strValue)}, nil
 }
 
 func (pl PropertyOrLabelsExpression) Evaluate(ctx *EvalContext) (Value, error) {
@@ -862,10 +1023,20 @@ func (pl PropertyOrLabelsExpression) Evaluate(ctx *EvalContext) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	for range pl.PropertyLookup {
-		panic("Unimplemented")
-	}
 	if pl.NodeLabels != nil {
+		gobj, ok := val.Value.(GraphObject)
+		if !ok {
+			return Value{}, ErrNotAGraphObject
+		}
+		for _, label := range *pl.NodeLabels {
+			str := label.String()
+			if !gobj.HasLabel(str) {
+				gobj.Labels = append(gobj.Labels, str)
+			}
+		}
+		val.Value = gobj
+	}
+	for range pl.PropertyLookup {
 		panic("Unimplemented")
 	}
 	return val, nil
@@ -890,8 +1061,8 @@ func (f *FunctionInvocation) Evaluate(ctx *EvalContext) (Value, error) {
 				return Value{}, err
 			}
 			if a == 0 {
-				isConst = v.IsConst()
-			} else if !v.IsConst() {
+				isConst = v.Constant
+			} else if !v.Constant {
 				isConst = false
 			}
 			args = append(args, v)
@@ -941,6 +1112,10 @@ func (cs Case) Evaluate(ctx *EvalContext) (Value, error) {
 	return Value{}, nil
 }
 
+func (v Variable) Evaluate(ctx *EvalContext) (Value, error) {
+	return ctx.GetVar(string(v))
+}
+
 func (query RegularQuery) Evaluate(ctx *EvalContext) (Value, error)       { panic("Unimplemented") }
 func (query SinglePartQuery) Evaluate(ctx *EvalContext) (Value, error)    { panic("Unimplemented") }
 func (match Match) Evaluate(ctx *EvalContext) (Value, error)              { panic("Unimplemented") }
@@ -950,5 +1125,4 @@ func (ls ListComprehension) Evaluate(ctx *EvalContext) (Value, error)     { pani
 func (p PatternComprehension) Evaluate(ctx *EvalContext) (Value, error)   { panic("Unimplemented") }
 func (flt FilterAtom) Evaluate(ctx *EvalContext) (Value, error)           { panic("Unimplemented") }
 func (rel RelationshipsPattern) Evaluate(ctx *EvalContext) (Value, error) { panic("Unimplemented") }
-func (v Variable) Evaluate(ctx *EvalContext) (Value, error)               { panic("Unimplemented") }
 func (cnt CountAtom) Evaluate(ctx *EvalContext) (Value, error)            { panic("Unimplemented") }

@@ -113,10 +113,6 @@ type StringListNullOperatorExpressionPart struct {
 	IsNull    *bool
 }
 
-type ListIndexExpression struct {
-	Index Expression
-}
-
 type ListRangeExpression struct {
 	First  Expression
 	Second Expression
@@ -179,6 +175,16 @@ type SortItem struct {
 type SchemaName struct {
 	*SymbolicName
 	*ReservedWord
+}
+
+func (s SchemaName) String() string {
+	if s.SymbolicName != nil {
+		return string(*s.SymbolicName)
+	}
+	if s.ReservedWord != nil {
+		return string(*s.ReservedWord)
+	}
+	return ""
 }
 
 type Match struct {
