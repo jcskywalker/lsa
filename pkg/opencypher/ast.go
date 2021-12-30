@@ -28,6 +28,22 @@ type SinglePartQuery struct {
 	Return *ReturnClause
 }
 
+type MultiPartQueryPart struct {
+	Read   []ReadingClause
+	Update []UpdatingClause
+	With   WithClause
+}
+
+type WithClause struct {
+	Projection ProjectionBody
+	Where      Expression
+}
+
+type MultiPartQuery struct {
+	Parts       []MultiPartQueryPart
+	SingleQuery SinglePartQuery
+}
+
 type ReadingClause interface {
 	Evaluatable
 }
@@ -186,6 +202,9 @@ func (s SchemaName) String() string {
 	}
 	return ""
 }
+
+// oC_Match
+//      :  ( OPTIONAL SP )? MATCH SP? oC_Pattern ( SP? oC_Where )? ;
 
 type Match struct {
 	Optional bool
@@ -381,6 +400,46 @@ func oC_SinglePartQuery(ctx *parser.OC_SinglePartQueryContext) SinglePartQuery {
 	if x := ctx.OC_Return(); x != nil {
 		r := oC_Return(x.(*parser.OC_ReturnContext))
 		ret.Return = &r
+	}
+	return ret
+}
+
+//oC_MultiPartQuery
+//              :  ( ( oC_ReadingClause SP? )* ( oC_UpdatingClause SP? )* oC_With SP? )+ oC_SinglePartQuery ;
+func oC_MultiPartQuery(ctx *parser.OC_MultiPartQueryContext) MultiPartQuery {
+	ret := MultiPartQuery{Parts: []MultiPartQueryPart{}}
+	count := ctx.GetChildCount()
+	lastIsFull := true
+	for child := 0; child < count; child++ {
+		ch := ctx.GetChild(child)
+		lastPart := &ret.Parts[len(ret.Parts)-1]
+		switch expr := ch.(type) {
+		case *parser.OC_ReadingClauseContext:
+			lastPart.Read = append(lastPart.Read, oC_ReadingClause(expr))
+			lastIsFull = true
+		case *parser.OC_UpdatingClauseContext:
+			lastPart.Update = append(lastPart.Update, oC_UpdatingClause(expr))
+			lastIsFull = true
+		case *parser.OC_WithContext:
+			lastPart.With = oC_With(expr)
+			ret.Parts = append(ret.Parts, MultiPartQueryPart{})
+			lastIsFull = false
+		case *parser.OC_SinglePartQueryContext:
+			ret.SingleQuery = oC_SinglePartQuery(expr)
+		}
+	}
+	if !lastIsFull {
+		ret.Parts = ret.Parts[:len(ret.Parts)-1]
+	}
+	return ret
+}
+
+func oC_With(ctx *parser.OC_WithContext) WithClause {
+	ret := WithClause{
+		Projection: oC_ProjectionBody(ctx.OC_ProjectionBody().(*parser.OC_ProjectionBodyContext)),
+	}
+	if w := ctx.OC_Where(); w != nil {
+		ret.Where = oC_Where(w.(*parser.OC_WhereContext))
 	}
 	return ret
 }
@@ -1191,8 +1250,4 @@ func oC_Remove(ctx *parser.OC_RemoveContext) Evaluatable {
 
 func oC_StandaloneCall(ctx *parser.OC_StandaloneCallContext) Evaluatable {
 	panic("Unsupported: standaloneCall")
-}
-
-func oC_MultiPartQuery(ctx *parser.OC_MultiPartQueryContext) Evaluatable {
-	panic("Unsupported: multipart query")
 }
