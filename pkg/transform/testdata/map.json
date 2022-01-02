@@ -1,0 +1,67 @@
+[
+    {
+        "name": "Basic map",
+        "doc": {
+            "nodes": [
+                {
+                    "n":0,
+                    "type": ["https://lschema.org/Object","https://lschema.org/DocumentNode"]
+                },
+                {
+                    "n":1,
+                    "type": ["https://lschema.org/Value","https://lschema.org/DocumentNode"],
+                    "val": "v1",
+                    "properties": {
+                        "https://lschema.org/map": "http://example.org/a1"
+                    }
+                },
+                {
+                    "n":2,
+                    "type": ["https://lschema.org/Value","https://lschema.org/DocumentNode"],
+                    "val": "v2",
+                    "properties": {
+                        "https://lschema.org/map": "http://example.org/a2"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "fn": 0,
+                    "tn": 1,
+                    "label": "https://lschema.org/data/has"
+                },
+                {
+                    "fn": 0,
+                    "tn": 2,
+                    "label": "https://lschema.org/data/has"
+                }
+            ]
+        },
+        "targetSchema": {
+            "@context": {"ls": "https://lschema.org/"},
+            "@type": "ls:Schema",
+            "@id": "http://example.org/TestTarget",
+            "ls:layer": {
+                "@type": ["ls:Object","http://example.org/TargetType"],
+                "ls:Object/attributes": [
+                    {
+                        "@id": "http://example.org/a1",
+                        "@type": "ls:Value"
+                    },
+                    {
+                        "@id": "http://example.org/o1",
+                        "@type": "ls:Object",
+                        "ls:Object/attributes": [
+                            {
+                                "@id":"http://example.org/a2",
+                                "@type": "ls:Value"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        "expected": {
+        }
+    }
+]

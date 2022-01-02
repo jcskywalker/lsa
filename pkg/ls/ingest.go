@@ -242,7 +242,8 @@ func (ingester *Ingester) NewNode(path []interface{}, schemaNode Node) Node {
 // EmbedSchemaNode merges the schema node properties with the target
 // node properties. No properties are overwritten in the target
 // node. The schema node types that are not schema node types are also
-// merged with the target node types.
+// merged with the target node types. The schema node ID is preserved
+// in an instanceOf attribute.
 func (ingester *Ingester) EmbedSchemaNode(targetNode, schemaNode Node) {
 	targetProperties := targetNode.GetProperties()
 	for k, v := range schemaNode.GetProperties() {
@@ -250,7 +251,18 @@ func (ingester *Ingester) EmbedSchemaNode(targetNode, schemaNode Node) {
 			targetProperties[k] = v
 		}
 	}
-	targetNode.GetTypes().Add(FilterNonLayerTypes(schemaNode.GetTypes().Slice())...)
+	targetProperties[InstanceOfTerm] = StringPropertyValue(schemaNode.GetID())
+	t := schemaNode.GetTypes()
+	targetNode.GetTypes().Add(FilterNonLayerTypes(t.Slice())...)
+	if t.Has(AttributeTypes.Value) {
+		targetNode.GetTypes().Add(AttributeTypes.Value)
+	}
+	if t.Has(AttributeTypes.Array) {
+		targetNode.GetTypes().Add(AttributeTypes.Array)
+	}
+	if t.Has(AttributeTypes.Object) {
+		targetNode.GetTypes().Add(AttributeTypes.Object)
+	}
 }
 
 // GetAsPropertyValue returns if the node should be a property of a

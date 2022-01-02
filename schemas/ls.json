@@ -125,6 +125,8 @@
         "has": "ls:data/has",
         "instanceOf":"ls:data/instanceOf",
         "asPropertyOf" : "ls:asPropertyOf",
-        "asProperty": "ls:asProperty"
+        "asProperty": "ls:asProperty",
+        
+        "map": "ls:map"
     }
 }

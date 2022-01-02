@@ -153,6 +153,11 @@ var (
 	// should be added in the parent node
 	AsPropertyTerm = NewTerm(LS+"asProperty", false, false, OverrideComposition, nil)
 
+	// MapTerm specifies an attribute ID in a target schema. This is
+	// used to map fields ingested using one schema to be converted into
+	// another schema.
+	MapTerm = NewTerm(LS+"map", false, false, OverrideComposition, nil)
+
 	BundleTerm     = NewTerm(LS+"SchemaManifest/bundle", false, false, ErrorComposition, nil)
 	SchemaBaseTerm = NewTerm(LS+"SchemaManifest/schema", true, false, ErrorComposition, nil)
 	OverlaysTerm   = NewTerm(LS+"SchemaManifest/overlays", true, true, ErrorComposition, nil)

@@ -400,10 +400,50 @@ func FirstReachable(from Node, nodePredicate func(Node, []Node) bool, edgePredic
 
 // InstanceOf returns the transitive closure of all the nodes that are connect to this node via instanceOf term,
 func InstanceOf(node Node) []Node {
-	results := make(map[Node]struct{})
-	IterateDescendants(node, func(n Node, p []Node) bool {
-		results[n] = struct{}{}
+	seen := make(map[Node]struct{})
+	ret := make([]Node, 0)
+	ForEachInstanceOf(node, func(n Node) bool {
+		if _, ok := seen[n]; !ok {
+			seen[n] = struct{}{}
+			ret = append(ret, n)
+		}
 		return true
+	})
+	return ret
+}
+
+// InstanceOfID returns the IDs of the schema nodes this node is an instance of
+func InstanceOfID(node Node) []string {
+	out := make(map[string]struct{})
+	ForEachInstanceOf(node, func(n Node) bool {
+		v, has := n.GetProperties()[InstanceOfTerm]
+		if has {
+			if v.IsString() {
+				out[v.AsString()] = struct{}{}
+			} else if v.IsStringSlice() {
+				for _, x := range v.AsStringSlice() {
+					out[x] = struct{}{}
+				}
+			}
+		}
+		if IsAttributeNode(n) {
+			out[n.GetID()] = struct{}{}
+		}
+		return true
+	})
+	ret := make([]string, 0, len(out))
+	for x := range out {
+		ret = append(ret, x)
+	}
+	return ret
+}
+
+// ForEachInstanceOf traverses the transitive closure of all nodes
+// connected to the given nodes by instanceOf, and calls f until f
+// returns false or all nodes are traversed
+func ForEachInstanceOf(node Node, f func(Node) bool) {
+	IterateDescendants(node, func(n Node, p []Node) bool {
+		return f(n)
 	},
 		func(e Edge, p []Node) EdgeFuncResult {
 			if e.GetLabel() == InstanceOfTerm {
@@ -412,11 +452,6 @@ func InstanceOf(node Node) []Node {
 			return SkipEdgeResult
 		},
 		false)
-	ret := make([]Node, 0, len(results))
-	for x := range results {
-		ret = append(ret, x)
-	}
-	return ret
 }
 
 // CombineNodeTypes returns a combination of the types of all the given nodes
@@ -521,4 +556,26 @@ func DocumentNodesUnder(node ...Node) []Node {
 		ret = append(ret, x.(Node))
 	}
 	return ret
+}
+
+// GetSchemaProperty retrieves a schema property from a document
+// node. This is done by first looking at the node properties to see
+// if key exists. If it does, then the value of the key is
+// returned. If not, the function follows instanceOf edges in the
+// class, checking every schema node for the key, and returns the
+// first one.
+func GetSchemaProperty(node Node, key string) *PropertyValue {
+	value, exists := node.GetProperties()[key]
+	if exists {
+		return value
+	}
+	ForEachInstanceOf(node, func(n Node) bool {
+		v, exists := n.GetProperties()[key]
+		if exists {
+			value = v
+			return false
+		}
+		return true
+	})
+	return value
 }
