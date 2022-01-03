@@ -251,7 +251,9 @@ func (ingester *Ingester) EmbedSchemaNode(targetNode, schemaNode Node) {
 			targetProperties[k] = v
 		}
 	}
-	targetProperties[InstanceOfTerm] = StringPropertyValue(schemaNode.GetID())
+	if len(schemaNode.GetID()) > 0 {
+		targetProperties[InstanceOfTerm] = StringPropertyValue(schemaNode.GetID())
+	}
 	t := schemaNode.GetTypes()
 	targetNode.GetTypes().Add(FilterNonLayerTypes(t.Slice())...)
 	if t.Has(AttributeTypes.Value) {

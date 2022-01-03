@@ -46,15 +46,18 @@
                 "ls:Object/attributes": [
                     {
                         "@id": "http://example.org/a1",
-                        "@type": "ls:Value"
+                        "@type": "ls:Value",
+                        "ls:attributeName": "a1"
                     },
                     {
                         "@id": "http://example.org/o1",
                         "@type": "ls:Object",
+                        "ls:attributeName": "o1",
                         "ls:Object/attributes": [
                             {
                                 "@id":"http://example.org/a2",
-                                "@type": "ls:Value"
+                                "@type": "ls:Value",
+                                "ls:attributeName": "a2"
                             }
                         ]
                     }
@@ -62,6 +65,59 @@
             }
         },
         "expected": {
+            "nodes": [
+                {
+                    "n":0,
+                    "type": ["https://lschema.org/Object","https://lschema.org/DocumentNode","http://example.org/TargetType"],
+                    "id": "http://example.org/TestTarget"
+                },
+                {
+                    "n":1,
+                    "type": ["https://lschema.org/Value","https://lschema.org/DocumentNode"],
+                    "val": "v1",
+                    "id": "http://example.org/TestTarget.a1",
+                    "properties": {
+                        "https://lschema.org/attributeIndex": "0",
+                        "https://lschema.org/data/instanceOf": "http://example/org/a1"
+                    }
+                },
+                {
+                    "n":2,
+                    "type": ["https://lschema.org/Object","https://lschema.org/DocumentNode"],
+                    "id": "http://example.org/TestTarget.o1",
+                    "properties": {
+                        "https://lschema.org/attributeIndex": "1",
+                        "https://lschema.org/data/instanceOf": "http://example.org/o1"
+                    }
+                },
+                {
+                    "n":3,
+                    "type": ["https://lschema.org/Value","https://lschema.org/DocumentNode"],
+                    "val": "v2",
+                    "id": "http://example.org/TestTarget.o1.a2",
+                    "properties": {
+                        "https://lschema.org/attributeIndex": "0",
+                        "https://lschema.org/data/instanceOf": "http://example.org/a2"
+                    }
+                }
+            ],
+            "edges": [
+                {
+                    "fn": 0,
+                    "tn": 1,
+                    "label": "https://lschema.org/data/has"
+                },
+                {
+                    "fn": 0,
+                    "tn": 2,
+                    "label": "https://lschema.org/data/has"
+                },
+                {
+                    "fn": 2,
+                    "tn": 3,
+                    "label": "https://lschema.org/data/has"
+                }
+            ]
         }
     }
 ]
