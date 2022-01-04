@@ -4,7 +4,7 @@ import (
 	"github.com/neo4j/neo4j-go-driver/neo4j"
 )
 
-func compareValues(v1, v2 interface{}) (int, error) {
+func comparePrimitiveValues(v1, v2 interface{}) (int, error) {
 	if v1 == nil || v2 == nil {
 		return 0, ErrOperationWithNull
 	}
@@ -139,7 +139,7 @@ func (expr ComparisonExpression) Evaluate(ctx *EvalContext) (Value, error) {
 		if second.Value == nil {
 			return Value{}, nil
 		}
-		result, err := compareValues(val.Value, second.Value)
+		result, err := comparePrimitiveValues(val.Value, second.Value)
 		if err != nil {
 			return Value{}, err
 		}
