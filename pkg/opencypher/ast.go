@@ -12,6 +12,10 @@ type Evaluatable interface {
 	Evaluate(*EvalContext) (Value, error)
 }
 
+type ResultSetProducer interface {
+	GetResultSet(*EvalContext) (ResultSet, error)
+}
+
 type RegularQuery struct {
 	SingleQuery Evaluatable
 	Unions      []Union
@@ -45,7 +49,7 @@ type MultiPartQuery struct {
 }
 
 type ReadingClause interface {
-	Evaluatable
+	ResultSetProducer
 }
 
 type UpdatingClause interface {
@@ -1224,7 +1228,7 @@ func oC_Unwind(ctx *parser.OC_UnwindContext) Unwind {
 	}
 }
 
-func oC_InQueryCall(ctx *parser.OC_InQueryCallContext) Evaluatable {
+func oC_InQueryCall(ctx *parser.OC_InQueryCallContext) ResultSetProducer {
 	panic("Unsupported: inQueryCall")
 }
 
