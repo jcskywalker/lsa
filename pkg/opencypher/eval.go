@@ -335,7 +335,6 @@ func (query SinglePartQuery) Evaluate(ctx *EvalContext) (Value, error) {
 }
 
 func (unwind Unwind) GetResultSet(ctx *EvalContext) (ResultSet, error)    { panic("Unimplemented") }
-func (pattern Pattern) Evaluate(ctx *EvalContext) (Value, error)          { panic("Unimplemented") }
 func (ls ListComprehension) Evaluate(ctx *EvalContext) (Value, error)     { panic("Unimplemented") }
 func (p PatternComprehension) Evaluate(ctx *EvalContext) (Value, error)   { panic("Unimplemented") }
 func (flt FilterAtom) Evaluate(ctx *EvalContext) (Value, error)           { panic("Unimplemented") }

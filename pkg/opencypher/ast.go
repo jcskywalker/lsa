@@ -212,7 +212,7 @@ func (s SchemaName) String() string {
 
 type Match struct {
 	Optional bool
-	Pattern  Evaluatable
+	Pattern  Pattern
 	Where    Expression
 }
 type NodeLabels []SchemaName
@@ -227,7 +227,7 @@ type Pattern struct {
 }
 
 type PatternPart struct {
-	Var  Variable
+	Var  *Variable
 	Part PatternElement
 }
 
@@ -825,7 +825,8 @@ func oC_Pattern(ctx *parser.OC_PatternContext) Pattern {
 func oC_PatternPart(ctx *parser.OC_PatternPartContext) PatternPart {
 	ret := PatternPart{}
 	if v := ctx.OC_Variable(); v != nil {
-		ret.Var = oC_Variable(v.(*parser.OC_VariableContext))
+		vr := oC_Variable(v.(*parser.OC_VariableContext))
+		ret.Var = &vr
 	}
 	ret.Part = oC_AnonymousPatternPart(ctx.OC_AnonymousPatternPart().(*parser.OC_AnonymousPatternPartContext))
 	return ret

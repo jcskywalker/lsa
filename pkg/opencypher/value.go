@@ -21,6 +21,8 @@ import (
 //    map[string]Value
 //    Labels
 //    OCNode
+//    OCEdge
+//    OCPath
 type Value struct {
 	Value    interface{}
 	Constant bool
@@ -35,6 +37,18 @@ type OCNode interface {
 	// SameNode returns if the underlying nodes are the same node
 	SameNode(OCNode) bool
 }
+
+// OCEdge represents an edge object
+type OCEdge interface {
+	GetTypes() []string
+	GetProperty(string) (Value, bool)
+	SameEdge(OCEdge) bool
+	GetFrom() OCNode
+	GetTo() OCNode
+}
+
+// An OCPath is a list of edges
+type OCPath []OCEdge
 
 // IsPrimitive returns true if the value is int, float64, bool,
 // string, duration, date, datetime, localDateTime, or localTime
@@ -112,6 +126,35 @@ func (v Value) IsSame(v2 Value) bool {
 			return false
 		}
 		return val1.SameNode(val2)
+
+	case OCEdge:
+		val2, ok := v2.Value.(OCEdge)
+		if !ok {
+			return false
+		}
+		return val1.SameEdge(val2)
+
+	case OCPath:
+		val2, ok := v2.Value.(OCPath)
+		if !ok {
+			return false
+		}
+		if len(val1) != len(val2) {
+			return false
+		}
+		for _, v1 := range val1 {
+			found := false
+			for _, v2 := range val2 {
+				if v1.SameEdge(v2) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
