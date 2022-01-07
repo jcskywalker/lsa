@@ -227,13 +227,9 @@ type Pattern struct {
 }
 
 type PatternPart struct {
-	Var  *Variable
-	Part PatternElement
-}
-
-type PatternElement struct {
-	Pattern NodePattern
-	Chain   []PatternElementChain
+	Var   *Variable
+	Start NodePattern
+	Path  []PatternChain
 }
 
 type NodePattern struct {
@@ -242,7 +238,7 @@ type NodePattern struct {
 	Properties *Properties
 }
 
-type PatternElementChain struct {
+type PatternChain struct {
 	Rel  RelationshipPattern
 	Node NodePattern
 }
@@ -259,10 +255,7 @@ type RelationshipDetail struct {
 	Properties *Properties
 }
 
-type Parameter struct {
-	*SymbolicName
-	IntLiteral
-}
+type Parameter string
 
 type Properties struct {
 	Map   *MapLiteral
@@ -292,7 +285,7 @@ type Filter struct {
 
 type RelationshipsPattern struct {
 	Start NodePattern
-	Chain []PatternElementChain
+	Chain []PatternChain
 }
 
 type ListComprehension struct {
@@ -828,25 +821,24 @@ func oC_PatternPart(ctx *parser.OC_PatternPartContext) PatternPart {
 		vr := oC_Variable(v.(*parser.OC_VariableContext))
 		ret.Var = &vr
 	}
-	ret.Part = oC_AnonymousPatternPart(ctx.OC_AnonymousPatternPart().(*parser.OC_AnonymousPatternPartContext))
+	ret.Start, ret.Path = oC_AnonymousPatternPart(ctx.OC_AnonymousPatternPart().(*parser.OC_AnonymousPatternPartContext))
 	return ret
 }
 
-func oC_AnonymousPatternPart(ctx *parser.OC_AnonymousPatternPartContext) PatternElement {
+func oC_AnonymousPatternPart(ctx *parser.OC_AnonymousPatternPartContext) (NodePattern, []PatternChain) {
 	return oC_PatternElement(ctx.OC_PatternElement().(*parser.OC_PatternElementContext))
 }
 
-func oC_PatternElement(ctx *parser.OC_PatternElementContext) PatternElement {
+func oC_PatternElement(ctx *parser.OC_PatternElementContext) (NodePattern, []PatternChain) {
 	if p := ctx.OC_PatternElement(); p != nil {
 		return oC_PatternElement(p.(*parser.OC_PatternElementContext))
 	}
-	ret := PatternElement{
-		Pattern: oC_NodePattern(ctx.OC_NodePattern().(*parser.OC_NodePatternContext)),
-	}
+	np := oC_NodePattern(ctx.OC_NodePattern().(*parser.OC_NodePatternContext))
+	chain := make([]PatternChain, 0)
 	for _, x := range ctx.AllOC_PatternElementChain() {
-		ret.Chain = append(ret.Chain, oC_PatternElementChain(x.(*parser.OC_PatternElementChainContext)))
+		chain = append(chain, oC_PatternElementChain(x.(*parser.OC_PatternElementChainContext)))
 	}
-	return ret
+	return np, chain
 }
 
 func oC_NodePattern(ctx *parser.OC_NodePatternContext) NodePattern {
@@ -866,8 +858,8 @@ func oC_NodePattern(ctx *parser.OC_NodePatternContext) NodePattern {
 	return ret
 }
 
-func oC_PatternElementChain(ctx *parser.OC_PatternElementChainContext) PatternElementChain {
-	return PatternElementChain{
+func oC_PatternElementChain(ctx *parser.OC_PatternElementChainContext) PatternChain {
+	return PatternChain{
 		Rel:  oC_RelationshipPattern(ctx.OC_RelationshipPattern().(*parser.OC_RelationshipPatternContext)),
 		Node: oC_NodePattern(ctx.OC_NodePattern().(*parser.OC_NodePatternContext)),
 	}
@@ -933,13 +925,13 @@ func oC_Properties(ctx *parser.OC_PropertiesContext) Properties {
 }
 
 func oC_Parameter(ctx *parser.OC_ParameterContext) Parameter {
-	ret := Parameter{}
+	var ret Parameter
 	if x := ctx.OC_SymbolicName(); x != nil {
 		c := oC_SymbolicName(x.(*parser.OC_SymbolicNameContext))
-		ret.SymbolicName = &c
+		ret = Parameter("$" + string(c))
 		return ret
 	}
-	ret.IntLiteral = DecimalInteger(ctx.DecimalInteger())
+	ret = Parameter("$" + ctx.DecimalInteger().GetText())
 	return ret
 }
 

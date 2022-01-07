@@ -89,3 +89,24 @@ func (mp *MapLiteral) Evaluate(ctx *EvalContext) (Value, error) {
 	}
 	return val, nil
 }
+
+func (r *RangeLiteral) Evaluate(ctx *EvalContext) (from, to *int, err error) {
+	var v Value
+	if r.From != nil {
+		v, err = r.From.Evaluate(ctx)
+		if err != nil {
+			return
+		}
+		i := v.Value.(int)
+		from = &i
+	}
+	if r.To != nil {
+		v, err = r.To.Evaluate(ctx)
+		if err != nil {
+			return
+		}
+		i := v.Value.(int)
+		to = &i
+	}
+	return
+}

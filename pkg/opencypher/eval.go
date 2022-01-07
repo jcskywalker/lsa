@@ -32,7 +32,31 @@ var (
 )
 
 func (match Match) GetResultSet(ctx *EvalContext) (ResultSet, error) {
+	graph := ctx.graph
 
+	for _, part := range match.Pattern.Parts {
+		np, err := part.Start.GetExecutablePattern(ctx)
+		if err != nil {
+			return ResultSet{}, err
+		}
+		np.Execute(ctx)
+
+		for _, pathElem := range part.Path {
+			rel, err := pathElem.Rel.GetExecutablePattern(ctx)
+			if err != nil {
+				return ResultSet{}, err
+			}
+
+			np, err := pathElem.Node.GetExecutablePattern(ctx)
+			if err != nil {
+				return ResultSet{}, err
+			}
+		}
+	}
+}
+
+func (expr Parameter) Evaluate(ctx *EvalContext) (Value, error) {
+	return ctx.GetParameter(string(expr))
 }
 
 func (expr StringListNullOperatorExpression) Evaluate(ctx *EvalContext) (Value, error) {
@@ -109,7 +133,7 @@ func (expr StringListNullOperatorExpressionPart) evaluate(ctx *EvalContext, inpu
 			if elem.Value == nil {
 				hasNull = true
 			} else {
-				v, err := compareValues(inputValue.Value, elem.Value)
+				v, err := comparePrimitiveValues(inputValue.Value, elem.Value)
 				if err != nil {
 					return Value{}, err
 				}
@@ -276,7 +300,7 @@ func (cs Case) Evaluate(ctx *EvalContext) (Value, error) {
 			return Value{}, err
 		}
 		if cs.Test != nil {
-			result, err := compareValues(testValue, when)
+			result, err := comparePrimitiveValues(testValue, when)
 			if err != nil {
 				return Value{}, err
 			}

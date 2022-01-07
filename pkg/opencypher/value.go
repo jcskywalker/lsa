@@ -28,28 +28,6 @@ type Value struct {
 	Constant bool
 }
 
-// OCNode represents a node object as viewed by Opencypher
-type OCNode interface {
-	// GetProperty returns the value of a property
-	GetProperty(string) (Value, bool)
-	// Returns the labels of the node
-	GetLabels() Labels
-	// SameNode returns if the underlying nodes are the same node
-	SameNode(OCNode) bool
-}
-
-// OCEdge represents an edge object
-type OCEdge interface {
-	GetTypes() []string
-	GetProperty(string) (Value, bool)
-	SameEdge(OCEdge) bool
-	GetFrom() OCNode
-	GetTo() OCNode
-}
-
-// An OCPath is a list of edges
-type OCPath []OCEdge
-
 // IsPrimitive returns true if the value is int, float64, bool,
 // string, duration, date, datetime, localDateTime, or localTime
 func (v Value) IsPrimitive() bool {

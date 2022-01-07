@@ -4,16 +4,43 @@ import (
 	"strings"
 )
 
+type ErrUnknownParameter struct {
+	Key string
+}
+
+func (e ErrUnknownParameter) Error() string { return "Unknown parameter: " + e.Key }
+
 type Function func(*EvalContext, []Evaluatable) (Value, error)
 
 type EvalContext struct {
-	parent    *EvalContext
-	funcMap   map[string]Function
-	variables map[string]Value
+	parent     *EvalContext
+	funcMap    map[string]Function
+	variables  map[string]Value
+	parameters map[string]Value
+	graph      OCGraph
 }
 
-func NewEvalContext() *EvalContext {
-	return &EvalContext{funcMap: globalFuncs}
+func NewEvalContext(graph OCGraph) *EvalContext {
+	return &EvalContext{
+		funcMap:    globalFuncs,
+		variables:  make(map[string]Value),
+		parameters: make(map[string]Value),
+		graph:      graph,
+	}
+}
+
+// SetParameter sets a parameter to be used in expressions
+func (ctx *EvalContext) SetParameter(key string, value Value) *EvalContext {
+	ctx.parameters[key] = value
+	return ctx
+}
+
+func (ctx *EvalContext) GetParameter(key string) (Value, error) {
+	value, ok := ctx.parameters[key]
+	if !ok {
+		return Value{}, ErrUnknownParameter{Key: key}
+	}
+	return value, nil
 }
 
 type ErrUnknownFunction struct {
